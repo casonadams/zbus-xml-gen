@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
-use crate::helpers::dbus_type_to_rust;
-use crate::helpers::dedup_and_escape;
-use crate::helpers::escape_rust_keyword;
-use crate::helpers::to_snake_case;
+use crate::codegen::dbus_type_to_rust;
+use crate::codegen::dedup_and_escape;
+use crate::codegen::escape_rust_keyword;
+use crate::codegen::to_snake_case;
 
 use zbus_xml::Annotation;
 use zbus_xml::ArgDirection;

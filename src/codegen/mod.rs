@@ -1,8 +1,8 @@
 pub use self::client::*;
-pub use self::method::*;
-pub use self::property::*;
+use self::names::*;
 pub use self::server::*;
+use self::types::*;
 mod client;
-mod method;
-mod property;
+mod names;
 mod server;
+mod types;
