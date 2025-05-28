@@ -3,6 +3,11 @@ name = "zbus-xml-gen"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+cli = ["clap"]
+
 [dependencies]
+clap = { version = "4", features = ["derive"], optional = true }
 heck = "0.5"
 zbus_xml = "5"

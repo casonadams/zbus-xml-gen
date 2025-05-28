@@ -1,6 +1,6 @@
-use zbus_xml_gen::generate_client_proxy;
+use zbus_xml_gen::generate_client_proxies_from_xml;
 mod common;
-use common::{assert_contains, assert_not_contains, parse_interface};
+use common::{assert_contains, assert_not_contains};
 
 const MIXED_XML: &str = r#"
 <node>
@@ -17,34 +17,30 @@ const MIXED_XML: &str = r#"
 
 #[test]
 fn trait_generated_for_mixed_interface() {
-    let iface = parse_interface(MIXED_XML);
-    let actual = generate_client_proxy(&iface);
+    let actual = generate_client_proxies_from_xml(MIXED_XML);
     let expected = "pub trait Mixed {";
     assert_contains(&actual, expected);
 }
 
 #[test]
 fn method_generated_in_mixed_interface() {
-    let iface = parse_interface(MIXED_XML);
-    let actual = generate_client_proxy(&iface);
+    let actual = generate_client_proxies_from_xml(MIXED_XML);
     let expected = "fn do_thing(&self, val: i32) -> zbus::Result<i32>;";
     assert_contains(&actual, expected);
 }
 
 #[test]
 fn property_generated_in_mixed_interface() {
-    let iface = parse_interface(MIXED_XML);
-    let actual = generate_client_proxy(&iface);
+    let actual = generate_client_proxies_from_xml(MIXED_XML);
     let expected = "fn some_prop(&self) -> zbus::Result<String>;";
     assert_contains(&actual, expected);
 }
 
 #[test]
 fn no_fn_generated_for_signal_notify() {
-    let iface = parse_interface(MIXED_XML);
-    let actual = generate_client_proxy(&iface);
-    let expected = "fn notify";
-    assert_not_contains(&actual, expected);
+    let actual = generate_client_proxies_from_xml(MIXED_XML);
+    let not_expected = "fn notify";
+    assert_not_contains(&actual, not_expected);
 }
 
 const SIGNAL_RESERVED_XML: &str = r#"
@@ -60,10 +56,9 @@ const SIGNAL_RESERVED_XML: &str = r#"
 
 #[test]
 fn no_fn_generated_for_signal_with_reserved_names() {
-    let iface = parse_interface(SIGNAL_RESERVED_XML);
-    let actual = generate_client_proxy(&iface);
-    let expected = "fn reserved_names";
-    assert_not_contains(&actual, expected);
+    let actual = generate_client_proxies_from_xml(SIGNAL_RESERVED_XML);
+    let not_expected = "fn reserved_names";
+    assert_not_contains(&actual, not_expected);
 }
 
 const SIGNAL_NO_ARGS_XML: &str = r#"
@@ -76,8 +71,7 @@ const SIGNAL_NO_ARGS_XML: &str = r#"
 
 #[test]
 fn no_fn_generated_for_signal_with_no_args() {
-    let iface = parse_interface(SIGNAL_NO_ARGS_XML);
-    let actual = generate_client_proxy(&iface);
-    let expected = "fn signal_no_args";
-    assert_not_contains(&actual, expected);
+    let actual = generate_client_proxies_from_xml(SIGNAL_NO_ARGS_XML);
+    let not_expected = "fn signal_no_args";
+    assert_not_contains(&actual, not_expected);
 }

@@ -1,6 +1,6 @@
-use zbus_xml_gen::generate_client_proxy;
+use zbus_xml_gen::generate_server_traits_from_xml;
 mod common;
-use common::{assert_contains, parse_interface};
+use common::assert_contains;
 
 const COMPLEX_XML: &str = r#"
 <node>
@@ -44,80 +44,70 @@ const COMPLEX_XML: &str = r#"
 
 #[test]
 fn get_items_method_generated_with_expected_type() {
-    let iface = parse_interface(COMPLEX_XML);
-    let actual = generate_client_proxy(&iface);
-    let expected = "fn get_items(&self) -> zbus::Result<String>;";
+    let actual = generate_server_traits_from_xml(COMPLEX_XML);
+    let expected = "fn get_items(&mut self) -> zbus::Result<String>;";
     assert_contains(&actual, expected);
 }
 
 #[test]
 fn get_dict_method_generated_with_expected_type() {
-    let iface = parse_interface(COMPLEX_XML);
-    let actual = generate_client_proxy(&iface);
-    let expected = "fn get_dict(&self) -> zbus::Result<String>;";
+    let actual = generate_server_traits_from_xml(COMPLEX_XML);
+    let expected = "fn get_dict(&mut self) -> zbus::Result<String>;";
     assert_contains(&actual, expected);
 }
 
 #[test]
 fn get_string_array_method_generated() {
-    let iface = parse_interface(COMPLEX_XML);
-    let actual = generate_client_proxy(&iface);
-    let expected = "fn get_string_array(&self) -> zbus::Result<String>;";
+    let actual = generate_server_traits_from_xml(COMPLEX_XML);
+    let expected = "fn get_string_array(&mut self) -> zbus::Result<String>;";
     assert_contains(&actual, expected);
 }
 
 #[test]
 fn get_int_array_method_generated() {
-    let iface = parse_interface(COMPLEX_XML);
-    let actual = generate_client_proxy(&iface);
-    let expected = "fn get_int_array(&self) -> zbus::Result<String>;";
+    let actual = generate_server_traits_from_xml(COMPLEX_XML);
+    let expected = "fn get_int_array(&mut self) -> zbus::Result<String>;";
     assert_contains(&actual, expected);
 }
 
 #[test]
 fn get_nested_dict_method_generated() {
-    let iface = parse_interface(COMPLEX_XML);
-    let actual = generate_client_proxy(&iface);
-    let expected = "fn get_nested_dict(&self) -> zbus::Result<String>;";
+    let actual = generate_server_traits_from_xml(COMPLEX_XML);
+    let expected = "fn get_nested_dict(&mut self) -> zbus::Result<String>;";
     assert_contains(&actual, expected);
 }
 
 #[test]
 fn get_primitive_method_generated() {
-    let iface = parse_interface(COMPLEX_XML);
-    let actual = generate_client_proxy(&iface);
-    let expected = "fn get_primitive(&self) -> zbus::Result<i32>;";
+    let actual = generate_server_traits_from_xml(COMPLEX_XML);
+    let expected = "fn get_primitive(&mut self) -> zbus::Result<i32>;";
     assert_contains(&actual, expected);
 }
 
 #[test]
 fn get_nothing_method_generated() {
-    let iface = parse_interface(COMPLEX_XML);
-    let actual = generate_client_proxy(&iface);
-    let expected = "fn get_nothing(&self) -> zbus::Result<()>;";
+    let actual = generate_server_traits_from_xml(COMPLEX_XML);
+    let expected = "fn get_nothing(&mut self) -> zbus::Result<()>;";
     assert_contains(&actual, expected);
 }
 
 #[test]
 fn multi_return_method_generated() {
-    let iface = parse_interface(COMPLEX_XML);
-    let actual = generate_client_proxy(&iface);
-    let expected = "fn multi_return(&self) -> zbus::Result<(i32, i32, String)>;";
+    let actual = generate_server_traits_from_xml(COMPLEX_XML);
+    let expected = "fn multi_return(&mut self) -> zbus::Result<(i32, i32, String)>;";
     assert_contains(&actual, expected);
 }
 
 #[test]
 fn with_inputs_method_generated() {
-    let iface = parse_interface(COMPLEX_XML);
-    let actual = generate_client_proxy(&iface);
-    let expected = "fn with_inputs(&self, key: String, flag: bool) -> zbus::Result<i32>;";
+    let actual = generate_server_traits_from_xml(COMPLEX_XML);
+    let expected = "fn with_inputs(&mut self, key: String, flag: bool) -> zbus::Result<i32>;";
     assert_contains(&actual, expected);
 }
 
 #[test]
 fn input_output_collision_method_generated() {
-    let iface = parse_interface(COMPLEX_XML);
-    let actual = generate_client_proxy(&iface);
-    let expected = "fn input_output_collision(&self, value: String) -> zbus::Result<i32>;";
+    let actual = generate_server_traits_from_xml(COMPLEX_XML);
+    let expected = "fn input_output_collision(&mut self, value: String) -> zbus::Result<i32>;";
     assert_contains(&actual, expected);
 }

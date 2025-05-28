@@ -1,11 +1,3 @@
-use zbus_xml::Node;
-
-#[allow(dead_code)]
-pub fn parse_interface(xml: &str) -> zbus_xml::Interface {
-    let node = Node::from_reader(std::io::Cursor::new(xml)).unwrap();
-    node.interfaces()[0].clone()
-}
-
 #[allow(dead_code)]
 pub fn assert_contains(actual: &str, expected: &str) {
     if !actual.contains(expected) {

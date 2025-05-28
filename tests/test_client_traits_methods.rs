@@ -1,6 +1,6 @@
-use zbus_xml_gen::generate_client_proxy;
+use zbus_xml_gen::generate_client_proxies_from_xml;
 mod common;
-use common::{assert_contains, parse_interface};
+use common::assert_contains;
 
 const METHOD_XML: &str = r#"
 <node>
@@ -37,48 +37,42 @@ const METHOD_XML: &str = r#"
 
 #[test]
 fn trait_generated() {
-    let iface = parse_interface(METHOD_XML);
-    let actual = generate_client_proxy(&iface);
+    let actual = generate_client_proxies_from_xml(METHOD_XML);
     let expected = "pub trait MethodCases {";
     assert_contains(&actual, expected);
 }
 
 #[test]
 fn no_args_no_return_generated() {
-    let iface = parse_interface(METHOD_XML);
-    let actual = generate_client_proxy(&iface);
+    let actual = generate_client_proxies_from_xml(METHOD_XML);
     let expected = "fn no_args_no_return(&self) -> zbus::Result<()>;";
     assert_contains(&actual, expected);
 }
 
 #[test]
 fn no_args_with_return_generated() {
-    let iface = parse_interface(METHOD_XML);
-    let actual = generate_client_proxy(&iface);
+    let actual = generate_client_proxies_from_xml(METHOD_XML);
     let expected = "fn no_args_with_return(&self) -> zbus::Result<String>;";
     assert_contains(&actual, expected);
 }
 
 #[test]
 fn single_input_no_return_generated() {
-    let iface = parse_interface(METHOD_XML);
-    let actual = generate_client_proxy(&iface);
+    let actual = generate_client_proxies_from_xml(METHOD_XML);
     let expected = "fn single_input_no_return(&self, input: i32) -> zbus::Result<()>;";
     assert_contains(&actual, expected);
 }
 
 #[test]
 fn multi_input_single_output_generated() {
-    let iface = parse_interface(METHOD_XML);
-    let actual = generate_client_proxy(&iface);
+    let actual = generate_client_proxies_from_xml(METHOD_XML);
     let expected = "fn multi_input_single_output(&self, x: i32, y: i32) -> zbus::Result<i32>;";
     assert_contains(&actual, expected);
 }
 
 #[test]
 fn multi_input_multi_output_generated() {
-    let iface = parse_interface(METHOD_XML);
-    let actual = generate_client_proxy(&iface);
+    let actual = generate_client_proxies_from_xml(METHOD_XML);
     let expected =
         "fn multi_input_multi_output(&self, a: i32, b: i32) -> zbus::Result<(i32, i32)>;";
     assert_contains(&actual, expected);
@@ -86,16 +80,14 @@ fn multi_input_multi_output_generated() {
 
 #[test]
 fn multi_output_generated() {
-    let iface = parse_interface(METHOD_XML);
-    let actual = generate_client_proxy(&iface);
+    let actual = generate_client_proxies_from_xml(METHOD_XML);
     let expected = "fn multi_output(&self) -> zbus::Result<(String, String)>;";
     assert_contains(&actual, expected);
 }
 
 #[test]
 fn input_output_name_collision_generated() {
-    let iface = parse_interface(METHOD_XML);
-    let actual = generate_client_proxy(&iface);
+    let actual = generate_client_proxies_from_xml(METHOD_XML);
     let expected = "fn input_output_name_collision(&self, value: String) -> zbus::Result<String>;";
     assert_contains(&actual, expected);
 }
