@@ -1,0 +1,8 @@
+[package]
+name = "zbus-xml-gen"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+heck = "0.5"
+zbus_xml = "5"
