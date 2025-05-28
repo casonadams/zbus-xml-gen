@@ -57,7 +57,9 @@ fn generate_server_impl(interface: &Interface) -> String {
     let mut used_names = HashSet::new();
     code.push_str(&render_methods(interface, &mut used_names));
     code.push_str(&render_properties(interface, &mut used_names));
-    code.push_str("}\n");
+    code.push_str("}\n\n");
+
+    code.push_str(&render_signal_emitter_struct(interface));
     code
 }
 
@@ -278,4 +280,74 @@ fn annotation_docs(anns: &[Annotation], indent: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn render_signal_fn(signal: &zbus_xml::Signal, iface_name: &str) -> String {
+    let docs = if !signal.annotations().is_empty() {
+        format!("{}\n", annotation_docs(signal.annotations(), "    "))
+    } else {
+        String::new()
+    };
+
+    let fn_name = format!("emit_{}", to_snake_case(&signal.name()));
+
+    let args: Vec<_> = signal
+        .args()
+        .iter()
+        .map(|arg| {
+            let name = escape_rust_keyword(&to_snake_case(arg.name().unwrap_or("arg")));
+            let ty = dbus_type_to_rust(&arg.ty().to_string());
+            format!("{}: {}", name, ty)
+        })
+        .collect();
+
+    let args_list = if args.is_empty() {
+        "emitter: &'a zbus::object_server::SignalEmitter<'a>".to_string()
+    } else {
+        format!(
+            "emitter: &'a zbus::object_server::SignalEmitter<'a>, {}",
+            args.join(", ")
+        )
+    };
+
+    let arg_names: Vec<_> = signal
+        .args()
+        .iter()
+        .map(|arg| escape_rust_keyword(&to_snake_case(arg.name().unwrap_or("arg"))))
+        .collect();
+
+    let tuple = match arg_names.len() {
+        0 => "()".to_string(),
+        1 => format!("({},)", arg_names[0]),
+        _ => format!("({})", arg_names.join(", ")),
+    };
+
+    format!(
+        "{docs}    pub fn {fn_name}<'a>({args_list}) -> impl std::future::Future<Output = zbus::Result<()>> + Send + 'a {{
+        async move {{
+            emitter.emit(\"{iface}\", \"{signal}\", &{tuple}).await
+        }}
+    }}\n\n",
+        docs = docs,
+        fn_name = fn_name,
+        args_list = args_list,
+        iface = iface_name,
+        signal = signal.name(),
+        tuple = tuple
+    )
+}
+
+fn render_signal_emitter_struct(interface: &Interface) -> String {
+    let struct_name = format!("{}Signals", trait_name(interface));
+    let mut out = String::new();
+
+    out.push_str(&format!("pub struct {};\n\n", struct_name));
+    out.push_str(&format!("impl {} {{\n", struct_name));
+
+    for signal in interface.signals() {
+        out.push_str(&render_signal_fn(signal, &interface.name()));
+    }
+
+    out.push_str("}\n");
+    out
 }

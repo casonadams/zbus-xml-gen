@@ -1,6 +1,7 @@
 use zbus_xml_gen::generate_server_traits_from_xml;
+
 mod common;
-use common::{assert_contains, assert_not_contains};
+use common::assert_contains;
 
 const MIXED_XML: &str = r#"
 <node>
@@ -37,10 +38,24 @@ fn property_generated_in_mixed_interface() {
 }
 
 #[test]
-fn no_fn_generated_for_signal_notify() {
+fn signal_notify_emitter_fn_signature() {
     let actual = generate_server_traits_from_xml(MIXED_XML);
-    let not_expected = "fn notify";
-    assert_not_contains(&actual, not_expected);
+    let expected = "fn emit_notify<'a>(";
+    assert_contains(&actual, expected);
+}
+
+#[test]
+fn signal_notify_emitter_uses_signal_emitter() {
+    let actual = generate_server_traits_from_xml(MIXED_XML);
+    let expected = "SignalEmitter<'a>";
+    assert_contains(&actual, expected);
+}
+
+#[test]
+fn signal_notify_emitter_return_type() {
+    let actual = generate_server_traits_from_xml(MIXED_XML);
+    let expected = "-> impl std::future::Future<Output = zbus::Result<()>> + Send";
+    assert_contains(&actual, expected);
 }
 
 const SIGNAL_RESERVED_XML: &str = r#"
@@ -55,10 +70,24 @@ const SIGNAL_RESERVED_XML: &str = r#"
 "#;
 
 #[test]
-fn no_fn_generated_for_signal_with_reserved_names() {
+fn signal_reserved_names_function() {
     let actual = generate_server_traits_from_xml(SIGNAL_RESERVED_XML);
-    let not_expected = "fn reserved_names";
-    assert_not_contains(&actual, not_expected);
+    let expected = "fn emit_reserved_names<'a>(";
+    assert_contains(&actual, expected);
+}
+
+#[test]
+fn signal_reserved_names_arg_type_is_escaped() {
+    let actual = generate_server_traits_from_xml(SIGNAL_RESERVED_XML);
+    let expected = "type_: String";
+    assert_contains(&actual, expected);
+}
+
+#[test]
+fn signal_reserved_names_arg_fn_is_escaped() {
+    let actual = generate_server_traits_from_xml(SIGNAL_RESERVED_XML);
+    let expected = "fn_: i32";
+    assert_contains(&actual, expected);
 }
 
 const SIGNAL_NO_ARGS_XML: &str = r#"
@@ -70,8 +99,29 @@ const SIGNAL_NO_ARGS_XML: &str = r#"
 "#;
 
 #[test]
-fn no_fn_generated_for_signal_with_no_args() {
+fn signal_no_args_function_generated() {
     let actual = generate_server_traits_from_xml(SIGNAL_NO_ARGS_XML);
-    let not_expected = "fn signal_no_args";
-    assert_not_contains(&actual, not_expected);
+    let expected = "fn emit_signal_no_args<'a>(";
+    assert_contains(&actual, expected);
+}
+
+#[test]
+fn signal_no_args_uses_signal_emitter() {
+    let actual = generate_server_traits_from_xml(SIGNAL_NO_ARGS_XML);
+    let expected = "SignalEmitter<'a>";
+    assert_contains(&actual, expected);
+}
+
+#[test]
+fn signal_no_args_return_type() {
+    let actual = generate_server_traits_from_xml(SIGNAL_NO_ARGS_XML);
+    let expected = "-> impl std::future::Future<Output = zbus::Result<()>> + Send";
+    assert_contains(&actual, expected);
+}
+
+#[test]
+fn signal_no_args_emit_unit_value() {
+    let actual = generate_server_traits_from_xml(SIGNAL_NO_ARGS_XML);
+    let expected = "&()";
+    assert_contains(&actual, expected);
 }
