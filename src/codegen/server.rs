@@ -5,7 +5,6 @@ use crate::codegen::dedup_and_escape;
 use crate::codegen::escape_rust_keyword;
 use crate::codegen::to_snake_case;
 
-use zbus_xml::Annotation;
 use zbus_xml::ArgDirection;
 use zbus_xml::Interface;
 use zbus_xml::Node;
@@ -65,10 +64,6 @@ fn generate_server_impl(interface: &Interface) -> String {
 
 fn render_trait_header(interface: &Interface) -> String {
     let mut out = String::new();
-    if !interface.annotations().is_empty() {
-        out.push_str(&annotation_docs(interface.annotations(), ""));
-        out.push('\n');
-    }
     out.push_str(&format!("pub trait {}Server {{\n", trait_name(interface)));
     out
 }
@@ -93,40 +88,13 @@ fn render_methods(interface: &Interface, used_names: &mut HashSet<String>) -> St
 fn render_method_signature(method: &zbus_xml::Method, used_names: &mut HashSet<String>) -> String {
     let mut out = String::new();
 
-    out.push_str(&render_method_annotations(method));
-    out.push_str(&render_args_annotations(method));
+    out.push_str(&format!("    /// {} method\n", method.name()));
     let rust_method = method_trait_name(method, used_names);
     let args = render_in_args(method);
     let ret_ty = render_out_args(method);
 
     out.push_str(&format_method_signature(&rust_method, &args, &ret_ty));
     out
-}
-
-fn render_method_annotations(method: &zbus_xml::Method) -> String {
-    if !method.annotations().is_empty() {
-        let docs = annotation_docs(method.annotations(), "    ");
-        format!("{}\n", docs)
-    } else {
-        String::new()
-    }
-}
-
-fn render_args_annotations(method: &zbus_xml::Method) -> String {
-    method
-        .args()
-        .iter()
-        .flat_map(|arg| {
-            arg.annotations().iter().map(move |ann| {
-                format!(
-                    "    /// [arg: {}] [annotation] {} = \"{}\"\n",
-                    arg.name().unwrap_or("unnamed"),
-                    ann.name(),
-                    ann.value().replace('\n', "\\n")
-                )
-            })
-        })
-        .collect()
 }
 
 fn method_trait_name(method: &zbus_xml::Method, used_names: &mut HashSet<String>) -> String {
@@ -204,7 +172,6 @@ fn render_properties(interface: &Interface, used_names: &mut HashSet<String>) ->
 fn render_property_signature(prop: &Property, used_names: &mut HashSet<String>) -> String {
     let mut out = String::new();
     out.push_str(&render_property_doc(prop));
-    out.push_str(&render_property_annotations(prop));
     let (get_name, set_name) = property_fn_names(prop, used_names);
     let rust_type = dbus_type_to_rust(&prop.ty().to_string());
     out.push_str(&render_property_getter(prop, &get_name, &rust_type));
@@ -217,14 +184,6 @@ fn render_property_signature(prop: &Property, used_names: &mut HashSet<String>) 
 
 fn render_property_doc(prop: &Property) -> String {
     format!("    /// property: {}\n", prop.name())
-}
-
-fn render_property_annotations(prop: &Property) -> String {
-    if !prop.annotations().is_empty() {
-        format!("{}\n", annotation_docs(prop.annotations(), "    "))
-    } else {
-        String::new()
-    }
 }
 
 fn property_fn_names(prop: &Property, used_names: &mut HashSet<String>) -> (String, String) {
@@ -272,23 +231,7 @@ fn render_property_setter(
     }
 }
 
-fn annotation_docs(anns: &[Annotation], indent: &str) -> String {
-    anns.iter()
-        .map(|ann| {
-            let value = ann.value().replace('\n', "\\n");
-            format!("{}/// [annotation] {} = \"{}\"", indent, ann.name(), value)
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 fn render_signal_fn(signal: &zbus_xml::Signal, iface_name: &str) -> String {
-    let docs = if !signal.annotations().is_empty() {
-        format!("{}\n", annotation_docs(signal.annotations(), "    "))
-    } else {
-        String::new()
-    };
-
     let fn_name = format!("emit_{}", to_snake_case(&signal.name()));
 
     let args: Vec<_> = signal
@@ -323,12 +266,12 @@ fn render_signal_fn(signal: &zbus_xml::Signal, iface_name: &str) -> String {
     };
 
     format!(
-        "{docs}    pub fn {fn_name}<'a>({args_list}) -> impl std::future::Future<Output = zbus::Result<()>> + Send + 'a {{
+        "    /// {} signal\n    pub fn {fn_name}<'a>({args_list}) -> impl std::future::Future<Output = zbus::Result<()>> + Send + 'a {{
         async move {{
             emitter.emit(\"{iface}\", \"{signal}\", &{tuple}).await
         }}
     }}\n\n",
-        docs = docs,
+        signal.name(),
         fn_name = fn_name,
         args_list = args_list,
         iface = iface_name,
@@ -338,6 +281,10 @@ fn render_signal_fn(signal: &zbus_xml::Signal, iface_name: &str) -> String {
 }
 
 fn render_signal_emitter_struct(interface: &Interface) -> String {
+    if interface.signals().is_empty() {
+        return String::new();
+    }
+
     let struct_name = format!("{}Signals", trait_name(interface));
     let mut out = String::new();
 

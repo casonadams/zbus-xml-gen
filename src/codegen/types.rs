@@ -5,6 +5,7 @@ pub fn dbus_type_to_rust(ty: &str) -> String {
         "i" => "i32".to_string(),
         "b" => "bool".to_string(),
         "ay" => "Vec<u8>".to_string(),
+        "t" => "u64".to_string(),
         _ => "String".to_string(),
     }
 }
@@ -35,6 +36,7 @@ mod tests {
             (type_unknown, "unknown", "String"),
             (type_x, "x", "String"),
             (type_empty, "", "String"),
+            (type_t, "t", "u64"),
         ]
     );
 }
