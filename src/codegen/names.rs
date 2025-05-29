@@ -20,24 +20,6 @@ pub fn escape_rust_keyword(ident: &str) -> String {
     }
 }
 
-pub fn dedup_and_escape(name: &str, used: &mut HashSet<String>) -> String {
-    let ident = escape_rust_keyword(name);
-    if !used.contains(&ident) {
-        used.insert(ident.clone());
-        ident
-    } else {
-        let mut i = 2;
-        loop {
-            let new_ident = format!("{}_{}", ident, i);
-            if !used.contains(&new_ident) {
-                used.insert(new_ident.clone());
-                return new_ident;
-            }
-            i += 1;
-        }
-    }
-}
-
 pub fn dedup_trait_name(base: &str, used: &mut HashSet<String>, _is_property: bool) -> String {
     let candidate = escape_rust_keyword(base);
 

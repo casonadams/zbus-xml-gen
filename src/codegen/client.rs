@@ -5,69 +5,68 @@ use crate::codegen::dedup_trait_name;
 use crate::codegen::escape_rust_keyword;
 use crate::codegen::to_snake_case;
 
-use zbus_xml::ArgDirection;
-use zbus_xml::Method;
-use zbus_xml::Node;
-use zbus_xml::Property;
-use zbus_xml::PropertyAccess;
+use zbus_xml::{ArgDirection, Interface, Method, Node, Property, PropertyAccess};
 
-/// Generates Rust trait code for a client proxy to a D-Bus interface from D-Bus introspection XML.
-///
-/// This function takes a D-Bus introspection XML (as a string slice),
-/// parses it, and produces the code for Rust traits representing all interfaces.
-/// Returns a string with all the generated code (one trait per interface).
-///
-/// # Arguments
-/// * `xml` - D-Bus introspection XML as a string slice.
-///
-/// # Returns
-/// * `String` - The generated Rust code for all client proxy traits.
-///
-/// # Panics
-/// Panics if the XML is invalid or parsing fails.
-///
-/// # Example
-/// ```
-/// use zbus_xml_gen::generate_client_proxies_from_xml;
-/// let xml = r#"
-/// <node>
-///   <interface name="org.example.Foo">
-///     <method name="Bar"><arg name="x" type="i" direction="in"/></method>
-///     <property name="status" type="s" access="read"/>
-///   </interface>
-/// </node>
-/// "#;
-/// let code = generate_client_proxies_from_xml(xml);
-/// assert!(code.contains("#[proxy(interface = \"org.example.Foo\""));
-/// assert!(code.contains("pub trait Foo {"));
-/// assert!(code.contains("fn bar(&self, x: i32) -> zbus::Result<()>;"));
-/// assert!(code.contains("fn status(&self) -> zbus::Result<String>;"));
-/// ```
 pub fn generate_client_proxies_from_xml(xml: &str) -> String {
     let cursor = std::io::Cursor::new(xml);
     let node = Node::from_reader(cursor).expect("Failed to parse D-Bus XML");
     let mut code = String::new();
-    code.push_str("use zbus::proxy;\n");
-    code.push_str(
-        &node
-            .interfaces()
-            .iter()
-            .map(|iface| generate_client_proxy(iface))
-            .collect::<Vec<_>>()
-            .join("\n"),
+
+    code.push_str(r#"use zbus::proxy;
+use zbus::Result;
+
+"#,
     );
+
+    for iface in node.interfaces() {
+        code.push_str(&generate_client_proxy(iface));
+    }
+
     code
 }
 
-fn generate_client_proxy(interface: &zbus_xml::Interface) -> String {
+fn generate_client_proxy(interface: &Interface) -> String {
     let mut code = String::new();
-    code.push_str(&format!(
-        "#[proxy(interface = \"{}\", assume_defaults = true)]\n",
-        interface.name()
+
+    let iface_name = interface.name();
+    let parts: Vec<_> = iface_name.split('.').collect();
+
+    let well_known_name = iface_name.clone();
+    let object_path = format!(
+        "/{}",
+        parts
+            .iter()
+            .map(|s| s.to_lowercase())
+            .collect::<Vec<_>>()
+            .join("/")
+    );
+
+    code.push_str(&format!(r#"pub const WELL_KNOWN_NAME: &str = "{well_known_name}";
+pub const OBJECT_PATH: &str = "{object_path}";
+
+pub struct ServiceConfig {{
+  pub well_known_name: String,
+  pub object_path: String,
+}}
+
+impl Default for ServiceConfig {{
+  fn default() -> Self {{
+    Self {{
+      well_known_name: WELL_KNOWN_NAME.to_string(),
+      object_path: OBJECT_PATH.to_string(),
+    }}
+  }}
+}}
+
+"#
     ));
 
-    let binding = interface.name();
-    let trait_name = binding.rsplit('.').next().unwrap_or("Iface");
+    code.push_str(&format!(r#"#[proxy(interface = "{}" , assume_defaults = true)]
+"#,
+        iface_name
+    ));
+
+    let trait_name = iface_name.rsplit('.').next().unwrap_or("Iface");
     code.push_str(&format!("pub trait {} {{\n", trait_name));
 
     let mut used_names = HashSet::new();
@@ -77,9 +76,34 @@ fn generate_client_proxy(interface: &zbus_xml::Interface) -> String {
     for prop in interface.properties() {
         code.push_str(&codegen_property(prop, &mut used_names));
     }
+    for signal in interface.signals() {
+        code.push_str(&codegen_signal(signal, &mut used_names));
+    }
 
     code.push_str("}\n");
     code
+}
+
+fn codegen_signal(signal: &zbus_xml::Signal, used_names: &mut HashSet<String>) -> String {
+    let rust_name = dedup_trait_name(&to_snake_case(&signal.name()), used_names, false);
+    let args: Vec<_> = signal
+        .args()
+        .iter()
+        .map(|arg| dbus_type_to_rust(&arg.ty().to_string()))
+        .collect();
+
+    let ret_ty = match args.len() {
+        0 => "()".to_string(),
+        1 => args[0].clone(),
+        _ => format!("({})", args.join(", ")),
+    };
+
+    format!(r#"  #[zbus(signal)]
+  fn {}(&self) -> zbus::Result<zbus::SignalStream<{}>>;
+
+"#,
+        rust_name, ret_ty
+    )
 }
 
 fn codegen_method(method: &Method, used_names: &mut HashSet<String>) -> String {
@@ -89,7 +113,6 @@ fn codegen_method(method: &Method, used_names: &mut HashSet<String>) -> String {
     let needs_zbus_name_attr = method_needs_zbus_name_attr(method, &rust_method);
 
     let mut s = String::new();
-    s.push_str(&render_method_doc(method));
     if needs_zbus_name_attr {
         s.push_str(&render_zbus_name_attr(method));
     }
@@ -151,23 +174,23 @@ fn method_needs_zbus_name_attr(method: &Method, rust_method: &str) -> bool {
     rust_method != escape_rust_keyword(&to_snake_case(&method.name()))
 }
 
-fn render_method_doc(method: &Method) -> String {
-    format!("  /// {} method\n", method.name())
-}
-
 fn render_zbus_name_attr(method: &Method) -> String {
-    format!("  #[zbus(name = \"{}\")]\n", method.name())
+    format!(r#"  #[zbus(name = "{}")]\n"#, method.name())
 }
 
 fn render_method_signature(rust_method: &str, args: &str, ret_ty: &str) -> String {
     if args.is_empty() {
         format!(
-            "  fn {}(&self) -> zbus::Result<{}>;\n\n",
+            r#"  fn {}(&self) -> zbus::Result<{}>;
+
+"#,
             rust_method, ret_ty
         )
     } else {
         format!(
-            "  fn {}(&self, {}) -> zbus::Result<{}>;\n\n",
+            r#"  fn {}(&self, {}) -> zbus::Result<{}>;
+
+"#,
             rust_method, args, ret_ty
         )
     }
@@ -177,11 +200,11 @@ fn codegen_property(prop: &Property, used_names: &mut HashSet<String>) -> String
     let rust_name = render_property_rust_name(prop, used_names);
     let rust_type = render_property_type(prop);
     match prop.access() {
-        PropertyAccess::Read => render_property_getter(prop, &rust_name, &rust_type),
-        PropertyAccess::Write => render_property_setter(prop, &rust_name, &rust_type),
+        PropertyAccess::Read => render_property_getter(&rust_name, &rust_type),
+        PropertyAccess::Write => render_property_setter(&rust_name, &rust_type),
         PropertyAccess::ReadWrite => {
-            let get = render_property_getter(prop, &rust_name, &rust_type);
-            let set = render_property_setter(prop, &rust_name, &rust_type);
+            let get = render_property_getter(&rust_name, &rust_type);
+            let set = render_property_setter(&rust_name, &rust_type);
             format!("{}{}", get, set)
         }
     }
@@ -196,20 +219,20 @@ fn render_property_type(prop: &Property) -> String {
     dbus_type_to_rust(&prop.ty().to_string())
 }
 
-fn render_property_getter(prop: &Property, rust_name: &str, rust_type: &str) -> String {
-    format!(
-        "  /// {} property\n  #[zbus(property)]\n  fn {}(&self) -> zbus::Result<{}>;\n\n",
-        prop.name(),
-        rust_name,
-        rust_type
+fn render_property_getter(rust_name: &str, rust_type: &str) -> String {
+    format!(r#"  #[zbus(property)]
+  fn {}(&self) -> zbus::Result<{}>;
+
+"#,
+        rust_name, rust_type
     )
 }
 
-fn render_property_setter(prop: &Property, rust_name: &str, rust_type: &str) -> String {
-    format!(
-        "  /// Set the {} property\n  #[zbus(property)]\n  fn set_{}(&self, value: {}) -> zbus::Result<()>;\n\n",
-        prop.name(),
-        rust_name,
-        rust_type
+fn render_property_setter(rust_name: &str, rust_type: &str) -> String {
+    format!(r#"  #[zbus(property)]
+  fn set_{}(&self, value: {}) -> zbus::Result<()>;
+
+"#,
+        rust_name, rust_type
     )
 }
