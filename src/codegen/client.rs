@@ -12,7 +12,8 @@ pub fn generate_client_proxies_from_xml(xml: &str) -> String {
     let node = Node::from_reader(cursor).expect("Failed to parse D-Bus XML");
     let mut code = String::new();
 
-    code.push_str(r#"use zbus::proxy;
+    code.push_str(
+        r#"use zbus::proxy;
 use zbus::Result;
 
 "#,
@@ -41,7 +42,8 @@ fn generate_client_proxy(interface: &Interface) -> String {
             .join("/")
     );
 
-    code.push_str(&format!(r#"pub const WELL_KNOWN_NAME: &str = "{well_known_name}";
+    code.push_str(&format!(
+        r#"pub const WELL_KNOWN_NAME: &str = "{well_known_name}";
 pub const OBJECT_PATH: &str = "{object_path}";
 
 pub struct ServiceConfig {{
@@ -61,7 +63,8 @@ impl Default for ServiceConfig {{
 "#
     ));
 
-    code.push_str(&format!(r#"#[proxy(interface = "{}" , assume_defaults = true)]
+    code.push_str(&format!(
+        r#"#[proxy(interface = "{}" , assume_defaults = true)]
 "#,
         iface_name
     ));
@@ -86,23 +89,23 @@ impl Default for ServiceConfig {{
 
 fn codegen_signal(signal: &zbus_xml::Signal, used_names: &mut HashSet<String>) -> String {
     let rust_name = dedup_trait_name(&to_snake_case(&signal.name()), used_names, false);
-    let args: Vec<_> = signal
+    let types: Vec<_> = signal
         .args()
         .iter()
         .map(|arg| dbus_type_to_rust(&arg.ty().to_string()))
         .collect();
 
-    let ret_ty = match args.len() {
+    let stream_type = match types.len() {
         0 => "()".to_string(),
-        1 => args[0].clone(),
-        _ => format!("({})", args.join(", ")),
+        1 => types[0].clone(),
+        _ => format!("({})", types.join(", ")),
     };
 
-    format!(r#"  #[zbus(signal)]
-  fn {}(&self) -> zbus::Result<zbus::SignalStream<{}>>;
+    format!(
+        r#"  #[zbus(signal)]
+  fn {rust_name}(&self) -> zbus::Result<zbus::SignalStream<{stream_type}>>;
 
 "#,
-        rust_name, ret_ty
     )
 }
 
@@ -220,7 +223,8 @@ fn render_property_type(prop: &Property) -> String {
 }
 
 fn render_property_getter(rust_name: &str, rust_type: &str) -> String {
-    format!(r#"  #[zbus(property)]
+    format!(
+        r#"  #[zbus(property)]
   fn {}(&self) -> zbus::Result<{}>;
 
 "#,
@@ -229,7 +233,8 @@ fn render_property_getter(rust_name: &str, rust_type: &str) -> String {
 }
 
 fn render_property_setter(rust_name: &str, rust_type: &str) -> String {
-    format!(r#"  #[zbus(property)]
+    format!(
+        r#"  #[zbus(property)]
   fn set_{}(&self, value: {}) -> zbus::Result<()>;
 
 "#,

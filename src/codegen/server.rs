@@ -18,17 +18,17 @@ fn generate_server_impl(interface: &Interface) -> String {
     let iface_name = interface.name();
     let struct_name = interface_struct_name(interface);
     let trait_name = interface_trait_name(interface);
-    let impl_struct = format!("{}", struct_name);
+    let impl_struct = struct_name.to_string();
     let server_struct = format!("{}Server", struct_name);
     let builder_struct = format!("{}ServerBuilder", struct_name);
 
-    let methods = interface.methods().into_iter().collect::<Vec<_>>();
+    let methods = interface.methods().iter().collect::<Vec<_>>();
     let method_names: Vec<_> = methods
         .iter()
         .map(|m| escape_rust_keyword(&to_snake_case(&m.name())))
         .collect();
 
-    let signals = interface.signals().into_iter().collect::<Vec<_>>();
+    let signals = interface.signals().iter().collect::<Vec<_>>();
     let mut out = String::new();
 
     out.push_str(
