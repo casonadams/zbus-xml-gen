@@ -103,31 +103,6 @@ macro_rules! tests {
   };
 }
 
-// Constants and Structs
-tests!([
-    (
-        client_well_known_name_const,
-        r#"pub const WELL_KNOWN_NAME: &str = "org.example.Complex";"#
-    ),
-    (
-        client_object_path_const,
-        r#"pub const OBJECT_PATH: &str = "/org/example/complex";"#
-    ),
-    (client_service_config_struct, "pub struct ServiceConfig {"),
-    (
-        client_service_config_default,
-        "impl Default for ServiceConfig {"
-    ),
-    (
-        client_service_config_default_impl,
-        r#"well_known_name: WELL_KNOWN_NAME.to_string(),"#
-    ),
-    (
-        client_service_config_default_path,
-        r#"object_path: OBJECT_PATH.to_string(),"#
-    )
-]);
-
 // Trait Declarations
 tests!([
     (

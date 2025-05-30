@@ -30,39 +30,6 @@ fn generate_client_proxy(interface: &Interface) -> String {
     let mut code = String::new();
 
     let iface_name = interface.name();
-    let parts: Vec<_> = iface_name.split('.').collect();
-
-    let well_known_name = iface_name.clone();
-    let object_path = format!(
-        "/{}",
-        parts
-            .iter()
-            .map(|s| s.to_lowercase())
-            .collect::<Vec<_>>()
-            .join("/")
-    );
-
-    code.push_str(&format!(
-        r#"pub const WELL_KNOWN_NAME: &str = "{well_known_name}";
-pub const OBJECT_PATH: &str = "{object_path}";
-
-pub struct ServiceConfig {{
-  pub well_known_name: String,
-  pub object_path: String,
-}}
-
-impl Default for ServiceConfig {{
-  fn default() -> Self {{
-    Self {{
-      well_known_name: WELL_KNOWN_NAME.to_string(),
-      object_path: OBJECT_PATH.to_string(),
-    }}
-  }}
-}}
-
-"#
-    ));
-
     code.push_str(&format!(
         r#"#[proxy(interface = "{}" , assume_defaults = true)]
 "#,

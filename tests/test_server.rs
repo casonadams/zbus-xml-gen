@@ -106,8 +106,6 @@ macro_rules! tests {
 tests!([
   // Imports and Constants
   (server_contains_use_zbus, "use zbus::{interface, Connection, Result};"),
-  (server_contains_object_path_const, r#"pub const OBJECT_PATH: &str = "/org/example/Complex";"#),
-  (server_contains_well_known_name_const, r#"pub const WELL_KNOWN_NAME: &str = "org.example.Complex";"#),
 
   // Trait
   (server_trait_handler_decl, "pub trait ComplexHandler: Send + Sync {"),
@@ -130,7 +128,6 @@ tests!([
   (server_struct_server, "pub struct ComplexServer {"),
   (server_builder_fn_build, "pub async fn build(self) -> Result<ComplexServer> {"),
   (server_register_object, r#"conn.object_server().at(obj_path, Complex::new(self.implementation.clone())).await?;"#),
-  (server_request_name, r#"conn.request_name(WellKnownName::try_from("org.example.Complex")?).await?;"#)
 ]);
 
 // More Handler Method Signatures

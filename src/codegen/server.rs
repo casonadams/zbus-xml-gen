@@ -31,6 +31,9 @@ fn generate_server_impl(interface: &Interface) -> String {
     let signals = interface.signals().iter().collect::<Vec<_>>();
     let mut out = String::new();
 
+    let default_object_path = format!("/{}", iface_name.replace('.', "/"));
+    let default_well_known_name = iface_name.clone();
+
     out.push_str(
         r#"use std::convert::TryFrom;
 use std::sync::Arc;
@@ -41,16 +44,6 @@ use zbus::zvariant::ObjectPath;
 
 "#,
     );
-
-    let object_path = format!("/{}", iface_name.replace('.', "/"));
-
-    out.push_str(&format!(
-        r#"pub const OBJECT_PATH: &str = "{}";
-pub const WELL_KNOWN_NAME: &str = "{}";
-
-"#,
-        object_path, iface_name
-    ));
 
     out.push_str(&format!(r#"pub trait {}: Send + Sync {{"#, trait_name));
     for (method, name) in methods.iter().zip(method_names.iter()) {
@@ -133,7 +126,7 @@ impl {} {{
   }}
 
 "#,
-            name, args, object_path, impl_struct, name, arg_names
+            name, args, default_object_path, impl_struct, name, arg_names
         ));
     }
     out.push_str("}\n");
@@ -142,19 +135,37 @@ impl {} {{
         r#"
 pub struct {} {{
   pub implementation: Arc<dyn {}>,
+  pub object_path: String,
+  pub well_known_name: String,
 }}
 
 impl {} {{
   pub fn new(implementation: Arc<dyn {}>) -> Self {{
-    Self {{ implementation }}
+    Self {{
+      implementation,
+      object_path: "{}".into(),
+      well_known_name: "{}".into(),
+    }}
+  }}
+
+  pub fn object_path(mut self, path: &str) -> Self {{
+    self.object_path = path.to_string();
+    self
+  }}
+
+  pub fn well_known_name(mut self, name: &str) -> Self {{
+    self.well_known_name = name.to_string();
+    self
   }}
 
   pub async fn build(self) -> Result<{}> {{
     let conn = Connection::session().await?;
-    let obj_path = ObjectPath::try_from("{}")?;
+    let obj_path = ObjectPath::try_from(self.object_path.clone())?;
     conn.object_server().at(obj_path, {}::new(self.implementation.clone())).await?;
-    conn.request_name(WellKnownName::try_from("{}")?).await?;
-    Ok({} {{ connection: Arc::new(conn) }})
+    conn.request_name(WellKnownName::try_from(self.well_known_name.clone())?).await?;
+    Ok({} {{
+      connection: Arc::new(conn),
+    }})
   }}
 }}
 "#,
@@ -162,10 +173,10 @@ impl {} {{
         trait_name,
         builder_struct,
         trait_name,
+        default_object_path,
+        default_well_known_name,
         server_struct,
-        object_path,
         impl_struct,
-        iface_name,
         server_struct
     ));
 
