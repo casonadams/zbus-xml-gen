@@ -31,17 +31,19 @@ fn generate_server_impl(interface: &Interface) -> String {
     let signals = interface.signals().iter().collect::<Vec<_>>();
     let mut out = String::new();
 
-    let legacy = strip_trailing_digits(&iface_name).to_lowercase();
-    let default_object_path = format!("/{}", legacy.replace('.', "/"));
-    let default_well_known_name = iface_name.clone();
+    let legacy_path = strip_trailing_digits(&iface_name).to_lowercase();
+    let default_object_path = format!("/{}", legacy_path.replace('.', "/"));
+
+    let legacy_name = strip_trailing_digits(&iface_name).to_lowercase();
+    let default_well_known_name = legacy_name.clone();
 
     out.push_str(
         r#"use std::convert::TryFrom;
 use std::sync::Arc;
 use zbus::{interface, Connection, Result};
 use zbus::object_server::SignalEmitter;
-use zbus::names::WellKnownName;
-use zbus::zvariant::ObjectPath;
+use zbus::names::{OwnedWellKnownName, WellKnownName};
+use zbus::zvariant::{OwnedObjectPath, ObjectPath};
 
 "#,
     );
@@ -96,6 +98,8 @@ impl {} {{
     out.push_str(&format!(
         r#"pub struct {} {{
   pub connection: Arc<Connection>,
+  pub object_path: ObjectPath<'static>,
+  pub well_known_name: WellKnownName<'static>,
 }}
 
 impl {} {{
@@ -122,12 +126,12 @@ impl {} {{
             .join(", ");
         out.push_str(&format!(
             r#"  pub async fn emit_{}(&self, {}) -> Result<()> {{
-    let emitter = SignalEmitter::new(&self.connection, "{}")?;
+    let emitter = SignalEmitter::new(&self.connection, &self.object_path)?;
     {}::{}(&emitter, {}).await
   }}
 
 "#,
-            name, args, default_object_path, impl_struct, name, arg_names
+            name, args, impl_struct, name, arg_names
         ));
     }
     out.push_str("}\n");
@@ -136,36 +140,41 @@ impl {} {{
         r#"
 pub struct {} {{
   pub implementation: Arc<dyn {}>,
-  pub object_path: String,
-  pub well_known_name: String,
+  object_path: ObjectPath<'static>,
+  well_known_name: WellKnownName<'static>,
 }}
 
 impl {} {{
   pub fn new(implementation: Arc<dyn {}>) -> Self {{
     Self {{
       implementation,
-      object_path: "{}".into(),
-      well_known_name: "{}".into(),
+      object_path: ObjectPath::try_from("{}").unwrap().into(),
+      well_known_name: WellKnownName::try_from("{}").unwrap().into(),
     }}
   }}
 
   pub fn object_path(mut self, path: &str) -> Self {{
-    self.object_path = path.to_string();
+    self.object_path = OwnedObjectPath::try_from(path)
+      .expect("Invalid object path")
+      .into();
     self
   }}
 
   pub fn well_known_name(mut self, name: &str) -> Self {{
-    self.well_known_name = name.to_string();
+    self.well_known_name = OwnedWellKnownName::try_from(name)
+      .expect("Invalid well-known name")
+      .into();
     self
   }}
 
   pub async fn build(self) -> Result<{}> {{
     let conn = Connection::session().await?;
-    let obj_path = ObjectPath::try_from(self.object_path.clone())?;
-    conn.object_server().at(obj_path, {}::new(self.implementation.clone())).await?;
-    conn.request_name(WellKnownName::try_from(self.well_known_name.clone())?).await?;
+    conn.object_server().at(self.object_path.clone(), {}::new(self.implementation.clone())).await?;
+    conn.request_name(self.well_known_name.clone()).await?;
     Ok({} {{
       connection: Arc::new(conn),
+      object_path: self.object_path,
+      well_known_name: self.well_known_name,
     }})
   }}
 }}
