@@ -3,7 +3,7 @@ fn main() {
     use clap::Parser;
     use std::fs;
     use std::io::{self, Read};
-    use zbus_xml_gen::{generate_client_proxies_from_xml, generate_server_traits_from_xml};
+    use zbus_xml_gen::{generate_client_proxies_from_xml, generate_server_interface_from_xml};
 
     #[derive(Parser)]
     #[command(author, version, about)]
@@ -32,7 +32,7 @@ fn main() {
 
     // Generate and print code
     let code = if cli.server {
-        generate_server_traits_from_xml(&xml)
+        generate_server_interface_from_xml(&xml)
     } else {
         generate_client_proxies_from_xml(&xml)
     };

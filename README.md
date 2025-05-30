@@ -40,7 +40,7 @@ println!("{}", code);
 ### Generate Server Traits
 
 ```rust
-use zbus_xml_gen::generate_server_traits_from_xml;
+use zbus_xml_gen::generate_server_interface_from_xml;
 
 let xml = r#"
 <node>
@@ -50,7 +50,7 @@ let xml = r#"
 </node>
 "#;
 
-let code = generate_server_traits_from_xml(xml);
+let code = generate_server_interface_from_xml(xml);
 println!("{}", code);
 // -> Generates Rust traits for implementing D-Bus servers
 ```

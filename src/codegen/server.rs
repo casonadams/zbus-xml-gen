@@ -1,305 +1,141 @@
-use std::collections::HashSet;
+use std::fmt::Write;
+use zbus_xml::{ArgDirection, Interface, Method, Node, Property, Signal};
 
 use crate::codegen::{dbus_type_to_rust, escape_rust_keyword, to_snake_case};
 
-use zbus_xml::{ArgDirection, Interface, Method, Node, Signal};
+pub fn generate_server_interface_from_xml(xml: &str) -> String {
+    let node = Node::from_reader(std::io::Cursor::new(xml)).expect("Failed to parse D-Bus XML");
 
-pub fn generate_server_traits_from_xml(xml: &str) -> String {
-    let cursor = std::io::Cursor::new(xml);
-    let node = Node::from_reader(cursor).expect("Failed to parse D-Bus XML");
     node.interfaces()
         .iter()
-        .map(generate_server_impl)
+        .map(generate_interface_block)
         .collect::<Vec<_>>()
         .join("\n")
 }
 
-fn generate_server_impl(interface: &Interface) -> String {
+fn generate_interface_block(interface: &Interface) -> String {
     let iface_name = interface.name();
-    let struct_name = interface_struct_name(interface);
-    let trait_name = interface_trait_name(interface);
-    let impl_struct = struct_name.to_string();
-    let server_struct = format!("{}Server", struct_name);
-    let builder_struct = format!("{}ServerBuilder", struct_name);
+    let struct_name = iface_name.rsplit('.').next().unwrap_or("Iface");
+    let trait_name = format!("{}Delegate", struct_name);
 
-    let methods = interface.methods().iter().collect::<Vec<_>>();
-    let method_names: Vec<_> = methods
-        .iter()
-        .map(|m| escape_rust_keyword(&to_snake_case(&m.name())))
-        .collect();
-
-    let signals = interface.signals().iter().collect::<Vec<_>>();
     let mut out = String::new();
 
-    let legacy = strip_trailing_digits(&iface_name).to_lowercase();
-    let default_object_path = format!("/{}", legacy.replace('.', "/"));
-    let default_well_known_name = iface_name.clone();
+    writeln!(out, "use std::sync::Arc;").unwrap();
+    writeln!(out, "use async_trait::async_trait;").unwrap();
+    writeln!(out, "use zbus::{{interface, Result}};").unwrap();
+    writeln!(out, "use zbus::object_server::SignalEmitter;\n").unwrap();
 
-    out.push_str(
-        r#"use std::convert::TryFrom;
-use std::sync::Arc;
-use zbus::{interface, Connection, Result};
-use zbus::object_server::SignalEmitter;
-use zbus::names::WellKnownName;
-use zbus::zvariant::ObjectPath;
-
-"#,
-    );
-
-    out.push_str(&format!(r#"pub trait {}: Send + Sync {{"#, trait_name));
-    for (method, name) in methods.iter().zip(method_names.iter()) {
-        let args = render_in_args_with_attrs(method);
-        let ret_ty = render_out_args(method);
-        out.push_str(&format!(
-            "\n  fn {}(&self{}) -> {};",
-            name,
-            if args.is_empty() {
-                "".into()
-            } else {
-                format!(", {}", args)
-            },
-            ret_ty
-        ));
+    // Trait
+    writeln!(out, "#[async_trait]").unwrap();
+    writeln!(out, "pub trait {}: Send + Sync + 'static {{", trait_name).unwrap();
+    for method in interface.methods() {
+        writeln!(out, "{}", generate_trait_method(method)).unwrap();
     }
-    out.push_str("\n}\n\n");
-
-    out.push_str(&format!(
-        r#"#[derive(Clone)]
-pub struct {} {{
-  inner: Arc<dyn {}>,
-}}
-
-impl {} {{
-  pub fn new(inner: Arc<dyn {}>) -> Self {{
-    Self {{ inner }}
-  }}
-}}
-
-"#,
-        impl_struct, trait_name, impl_struct, trait_name
-    ));
-
-    out.push_str(&format!(
-        r#"#[interface(name = "{}")]
-impl {} {{
-"#,
-        iface_name, impl_struct
-    ));
-    for (method, name) in methods.iter().zip(method_names.iter()) {
-        out.push_str(&render_delegating_method(method, name));
+    for prop in interface.properties() {
+        write!(out, "{}", generate_trait_property(prop)).unwrap();
     }
-    for signal in &signals {
-        out.push_str(&render_signal_emitter(signal));
+    writeln!(out, "}}\n").unwrap();
+
+    // Struct
+    writeln!(out, "#[derive(Clone)]").unwrap();
+    writeln!(out, "pub struct {} {{", struct_name).unwrap();
+    writeln!(out, "    pub delegate: Arc<dyn {}>,", trait_name).unwrap();
+    writeln!(out, "}}\n").unwrap();
+
+    writeln!(out, "impl {} {{", struct_name).unwrap();
+    writeln!(
+        out,
+        "    pub fn new(delegate: Arc<dyn {}>) -> Self {{",
+        trait_name
+    )
+    .unwrap();
+    writeln!(out, "        Self {{ delegate }}").unwrap();
+    writeln!(out, "    }}").unwrap();
+    writeln!(out, "}}\n").unwrap();
+
+    // Interface impl
+    writeln!(out, "#[interface(name = \"{}\")]", iface_name).unwrap();
+    writeln!(out, "impl {} {{", struct_name).unwrap();
+    for method in interface.methods() {
+        writeln!(out, "{}", generate_delegate_method(method)).unwrap();
     }
-    out.push_str("}\n\n");
-
-    out.push_str(&format!(
-        r#"pub struct {} {{
-  pub connection: Arc<Connection>,
-}}
-
-impl {} {{
-"#,
-        server_struct, server_struct
-    ));
-    for signal in &signals {
-        let name = to_snake_case(&signal.name());
-        let args = signal
-            .args()
-            .iter()
-            .map(|arg| {
-                let arg_name = escape_rust_keyword(&to_snake_case(arg.name().unwrap_or("arg")));
-                let arg_ty = dbus_type_to_rust(&arg.ty().to_string());
-                format!("{}: {}", arg_name, arg_ty)
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        let arg_names = signal
-            .args()
-            .iter()
-            .map(|arg| escape_rust_keyword(&to_snake_case(arg.name().unwrap_or("arg"))))
-            .collect::<Vec<_>>()
-            .join(", ");
-        out.push_str(&format!(
-            r#"  pub async fn emit_{}(&self, {}) -> Result<()> {{
-    let emitter = SignalEmitter::new(&self.connection, "{}")?;
-    {}::{}(&emitter, {}).await
-  }}
-
-"#,
-            name, args, default_object_path, impl_struct, name, arg_names
-        ));
+    for prop in interface.properties() {
+        writeln!(out, "{}", generate_delegate_property(prop)).unwrap();
     }
-    out.push_str("}\n");
-
-    out.push_str(&format!(
-        r#"
-pub struct {} {{
-  pub implementation: Arc<dyn {}>,
-  pub object_path: String,
-  pub well_known_name: String,
-}}
-
-impl {} {{
-  pub fn new(implementation: Arc<dyn {}>) -> Self {{
-    Self {{
-      implementation,
-      object_path: "{}".into(),
-      well_known_name: "{}".into(),
-    }}
-  }}
-
-  pub fn object_path(mut self, path: &str) -> Self {{
-    self.object_path = path.to_string();
-    self
-  }}
-
-  pub fn well_known_name(mut self, name: &str) -> Self {{
-    self.well_known_name = name.to_string();
-    self
-  }}
-
-  pub async fn build(self) -> Result<{}> {{
-    let conn = Connection::session().await?;
-    let obj_path = ObjectPath::try_from(self.object_path.clone())?;
-    conn.object_server().at(obj_path, {}::new(self.implementation.clone())).await?;
-    conn.request_name(WellKnownName::try_from(self.well_known_name.clone())?).await?;
-    Ok({} {{
-      connection: Arc::new(conn),
-    }})
-  }}
-}}
-"#,
-        builder_struct,
-        trait_name,
-        builder_struct,
-        trait_name,
-        default_object_path,
-        default_well_known_name,
-        server_struct,
-        impl_struct,
-        server_struct
-    ));
+    for signal in interface.signals() {
+        writeln!(out, "{}", generate_signal_signature(signal)).unwrap();
+    }
+    writeln!(out, "}}").unwrap();
 
     out
 }
 
-fn interface_struct_name(interface: &Interface) -> String {
-    interface
-        .name()
-        .rsplit('.')
-        .next()
-        .unwrap_or("Iface")
-        .to_string()
+fn generate_trait_method(method: &Method) -> String {
+    let name = escape_rust_keyword(&to_snake_case(&method.name()));
+    let args = method_args(method);
+    let ret = method_return_type(method);
+    format!("    async fn {}(&self{}) -> {};", name, args, ret)
 }
 
-fn interface_trait_name(interface: &Interface) -> String {
-    format!("{}Handler", interface_struct_name(interface))
-}
-
-fn render_in_args_with_attrs(method: &Method) -> String {
-    let mut used_arg_names = HashSet::new();
-    method
-        .args()
-        .iter()
-        .filter(|arg| matches!(arg.direction(), Some(ArgDirection::In)))
-        .map(|arg| {
-            let mut arg_name = arg
-                .name()
-                .map(to_snake_case)
-                .unwrap_or_else(|| "arg".to_string());
-            let attr = match arg_name.as_str() {
-                "hdr" | "header" => "#[zbus(header)] ",
-                "emitter" => "#[zbus(signal_emitter)] ",
-                "server" | "object_server" => "#[zbus(object_server)] ",
-                _ => "",
-            };
-            arg_name = escape_rust_keyword(&arg_name);
-            let orig_name = arg_name.clone();
-            let mut count = 2;
-            while !used_arg_names.insert(arg_name.clone()) {
-                arg_name = format!("{}_{}", orig_name, count);
-                count += 1;
-            }
-            format!(
-                "{}{}: {}",
-                attr,
-                arg_name,
-                dbus_type_to_rust(&arg.ty().to_string())
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn render_delegating_method(method: &Method, name: &str) -> String {
-    let args = render_in_args_with_attrs(method);
-    let ret_ty = render_out_args(method);
-    let call_args = method
-        .args()
-        .iter()
-        .filter(|arg| matches!(arg.direction(), Some(ArgDirection::In)))
-        .map(|arg| escape_rust_keyword(&to_snake_case(arg.name().unwrap_or("arg"))))
-        .collect::<Vec<_>>()
-        .join(", ");
-
+fn generate_trait_property(prop: &Property) -> String {
+    let name = escape_rust_keyword(&to_snake_case(&prop.name()));
+    let ty = dbus_type_to_rust(&prop.ty().to_string());
     let mut out = String::new();
-    if let Some(meta) = render_out_args_meta(method) {
-        out.push_str(&format!("  {}\n", meta));
+
+    if prop.access().read() {
+        writeln!(&mut out, "    async fn {}(&self) -> {};", name, ty).unwrap();
     }
-    out.push_str(&format!(
-        "  fn {}(&self{}) -> {} {{\n",
-        name,
-        if args.is_empty() {
-            "".into()
-        } else {
-            format!(", {}", args)
-        },
-        ret_ty
-    ));
-    out.push_str(&format!("    self.inner.{}({})\n", name, call_args));
-    out.push_str("  }\n\n");
+    if prop.access().write() {
+        writeln!(
+            &mut out,
+            "    async fn set_{}(&self, val: {}) -> Result<()>;",
+            name, ty
+        )
+        .unwrap();
+    }
+
     out
 }
 
-fn render_out_args_meta(method: &Method) -> Option<String> {
-    let out_args: Vec<_> = method
-        .args()
-        .iter()
-        .filter(|arg| matches!(arg.direction(), Some(ArgDirection::Out)))
-        .collect();
-    if out_args.len() > 1 {
-        let names = out_args
-            .iter()
-            .map(|arg| format!("\"{}\"", arg.name().unwrap_or("out")))
-            .collect::<Vec<_>>();
-        Some(format!("#[zbus(out_args({}))]", names.join(", ")))
-    } else {
-        None
-    }
+fn generate_delegate_method(method: &Method) -> String {
+    let name = escape_rust_keyword(&to_snake_case(&method.name()));
+    let args = method_args(method);
+    let ret = method_return_type(method);
+    let call_args = method_arg_names(method);
+
+    format!(
+        "    async fn {}(&self{}) -> {} {{\n        self.delegate.{}({}).await\n    }}\n",
+        name, args, ret, name, call_args
+    )
 }
 
-fn render_out_args(method: &Method) -> String {
-    let out_args: Vec<_> = method
-        .args()
-        .iter()
-        .filter(|arg| matches!(arg.direction(), Some(ArgDirection::Out)))
-        .collect();
-    match out_args.len() {
-        0 => "()".to_string(),
-        1 => dbus_type_to_rust(&out_args[0].ty().to_string()),
-        _ => {
-            let types = out_args
-                .iter()
-                .map(|arg| dbus_type_to_rust(&arg.ty().to_string()))
-                .collect::<Vec<_>>();
-            format!("({})", types.join(", "))
-        }
+fn generate_delegate_property(prop: &Property) -> String {
+    let name = escape_rust_keyword(&to_snake_case(&prop.name()));
+    let ty = dbus_type_to_rust(&prop.ty().to_string());
+    let mut out = String::new();
+
+    if prop.access().read() {
+        writeln!(
+            &mut out,
+            "    #[zbus(property)]\n    async fn {}(&self) -> {} {{\n        self.delegate.{}().await\n    }}",
+            name, ty, name
+        )
+        .unwrap();
     }
+    if prop.access().write() {
+        writeln!(
+            &mut out,
+            "    #[zbus(property)]\n    async fn set_{}(&mut self, val: {}) {{\n        let _ = self.delegate.set_{}(val).await;\n    }}",
+            name, ty, name
+        )
+        .unwrap();
+    }
+
+    out
 }
 
-fn render_signal_emitter(signal: &Signal) -> String {
-    let fn_name = to_snake_case(&signal.name());
+fn generate_signal_signature(signal: &Signal) -> String {
+    let name = to_snake_case(&signal.name());
     let args: Vec<_> = signal
         .args()
         .iter()
@@ -310,35 +146,67 @@ fn render_signal_emitter(signal: &Signal) -> String {
         })
         .collect();
 
-    let param_names: Vec<_> = signal
-        .args()
-        .iter()
-        .map(|arg| escape_rust_keyword(&to_snake_case(arg.name().unwrap_or("arg"))))
-        .collect();
-
-    let tuple = match param_names.len() {
-        0 => "()".to_string(),
-        1 => format!("({},)", param_names[0]),
-        _ => format!("({})", param_names.join(", ")),
+    let param_list = if args.is_empty() {
+        "emitter: SignalEmitter<'_>".to_string()
+    } else {
+        format!("emitter: SignalEmitter<'_>, {}", args.join(", "))
     };
 
     format!(
-        r#" #[zbus(signal)]
-  pub async fn {}(emitter: &SignalEmitter<'_>{}) -> Result<()> {{
-    emitter.emit_signal("{}", &{})
-  }}
-"#,
-        fn_name,
-        if args.is_empty() {
-            "".into()
-        } else {
-            format!(", {}", args.join(", "))
-        },
-        signal.name(),
-        tuple
+        "    #[zbus(signal)]\n    async fn {}({}) -> Result<()>;",
+        name, param_list
     )
 }
 
-fn strip_trailing_digits(s: &str) -> &str {
-    s.trim_end_matches(|c: char| c.is_ascii_digit())
+fn method_args(method: &Method) -> String {
+    let args: Vec<_> = method
+        .args()
+        .iter()
+        .filter(|a| a.direction() == Some(ArgDirection::In))
+        .map(|a| {
+            let name = escape_rust_keyword(&to_snake_case(a.name().unwrap_or("arg")));
+            let ty = dbus_type_to_rust(&a.ty().to_string());
+            format!("{}: {}", name, ty)
+        })
+        .collect();
+
+    if args.is_empty() {
+        "".into()
+    } else {
+        format!(", {}", args.join(", "))
+    }
+}
+
+fn method_arg_names(method: &Method) -> String {
+    method
+        .args()
+        .iter()
+        .filter(|a| a.direction() == Some(ArgDirection::In))
+        .map(|a| escape_rust_keyword(&to_snake_case(a.name().unwrap_or("arg"))))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn method_return_type(method: &Method) -> String {
+    let out_args: Vec<_> = method
+        .args()
+        .iter()
+        .filter(|a| a.direction() == Some(ArgDirection::Out))
+        .collect();
+
+    match out_args.len() {
+        0 => "zbus::fdo::Result<()>".into(),
+        1 => format!(
+            "zbus::fdo::Result<{}>",
+            dbus_type_to_rust(&out_args[0].ty().to_string())
+        ),
+        _ => format!(
+            "zbus::fdo::Result<({})>",
+            out_args
+                .iter()
+                .map(|a| dbus_type_to_rust(&a.ty().to_string()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
 }
