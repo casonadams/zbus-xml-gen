@@ -31,7 +31,8 @@ fn generate_server_impl(interface: &Interface) -> String {
     let signals = interface.signals().iter().collect::<Vec<_>>();
     let mut out = String::new();
 
-    let default_object_path = format!("/{}", iface_name.replace('.', "/"));
+    let legacy = strip_trailing_digits(&iface_name).to_lowercase();
+    let default_object_path = format!("/{}", legacy.replace('.', "/"));
     let default_well_known_name = iface_name.clone();
 
     out.push_str(
@@ -336,4 +337,8 @@ fn render_signal_emitter(signal: &Signal) -> String {
         signal.name(),
         tuple
     )
+}
+
+fn strip_trailing_digits(s: &str) -> &str {
+    s.trim_end_matches(|c: char| c.is_ascii_digit())
 }
