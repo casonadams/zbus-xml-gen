@@ -127,7 +127,7 @@ tests!([
   (server_struct_builder, "pub struct ComplexServerBuilder {"),
   (server_struct_server, "pub struct ComplexServer {"),
   (server_builder_fn_build, "pub async fn build(self) -> Result<ComplexServer> {"),
-  (server_register_object, r#"conn.object_server().at(obj_path, Complex::new(self.implementation.clone())).await?;"#),
+  (server_register_object, r#"conn.object_server().at(self.object_path.clone(), Complex::new(self.implementation.clone())).await?;"#),
 ]);
 
 // More Handler Method Signatures
